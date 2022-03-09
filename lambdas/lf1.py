@@ -1,13 +1,3 @@
-"""
-This sample demonstrates an implementation of the Lex Code Hook Interface
-in order to serve a sample bot which manages reservations for hotel rooms and car rentals.
-Bot, Intent, and Slot models which are compatible with this sample can be found in the Lex Console
-as part of the 'BookTrip' template.
-
-For instructions on how to set up and test this bot, as well as additional samples,
-visit the Lex Getting Started documentation http://docs.aws.amazon.com/lex/latest/dg/getting-started.html.
-"""
-
 import math
 import json
 import datetime
@@ -19,9 +9,6 @@ import boto3 as boto3
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
-
-
-
 
 
 QUEUE_NAME = "DiningBotQueue"
@@ -111,16 +98,22 @@ def try_ex(func):
 
 
 def isvalid_city(city):
-    valid_cities = ['manhattan','new york']
+    # valid_cities = ['manhattan','new york']
+    valid_cities = ['new york']
     return city.lower() in valid_cities
 
 
 def isvalid_cuisines(cuisine):
-    valid_cuisines = ['italine', 'thai', 'american', 'chinese', 'indian','japanese']
+    valid_cuisines = ['italian', 'thai', 'american', 'chinese', 'indian','caribbean','korean', 'mexican']
     return cuisine.lower() in valid_cuisines
 
 
 def build_validation_result(isvalid, violated_slot, message_content):
+
+    if violated_slot == 'DiningTime':
+        logger.debug("DiningTime violated: {}".format(message_content))
+    else:
+        logger.debug("{} - {}".format(violated_slot, message_content))
     return {
         'isValid': isvalid,
         'violatedSlot': violated_slot,
@@ -129,6 +122,7 @@ def build_validation_result(isvalid, violated_slot, message_content):
 
 
 def format_and_send_to_sqs(location, cuisine, people, reserve_time, phone):
+    # if phone[0] != '+':
     phone = "+1"+phone
     data = {'location': location, 'time': reserve_time,
             'cuisine': cuisine, 'people': people,
@@ -147,17 +141,18 @@ def validate_suggest_dine(slots):
         return build_validation_result(
             False,
             'Location',
-            'We currently do not support {} as a valid destination.  Can you try Manhattan or New York ?'.format(location)
+            'We currently do not support {} as a valid destination. We are currently only supporting New York as a city.'.format(location)
         )
 
     if cuisine and not isvalid_cuisines(cuisine):
         return build_validation_result(
             False,
             'Cuisine',
-            'We currently only support Italine, Thai, French, Chinese, Indian and Japanese cuisines. Can you choose from one of these?'
+            'We currently only support Italian, Thai, Chinese, Indian, Korean, Caribbean, Mexican and American cuisines. Can you choose from one of these?'
         )
 
     if dineTime is not None:
+        logger.debug("dineTime = {}".format(dineTime))
         if len(dineTime) != 5:
             # Not a valid time; use a prompt defined on the build-time model.
             return build_validation_result(False, 'DiningTime', 'Invalid time format, please use HH:MM format.')
@@ -171,21 +166,23 @@ def validate_suggest_dine(slots):
 
         if hour < 10 or hour > 22:
             # Outside of service hours
-            return build_validation_result(False, 'DiningTime', 'You can dine in from ten a m. to 10 p m only. Can you specify a time during this range?')
+            return build_validation_result(False, 'DiningTime', 'You can dine in from 10am. to 10pm only.')
 
 
-    if numPeople is not None and int(numPeople) > 20 and int(numPeople) < 1:
-        return build_validation_result(
-            False,
-            'NumPeople',
-            'You can host only between 1 to 20 people. Can you provide the valid value in this range?'
-        )
+    # if numPeople is not None and int(numPeople) > 20 and int(numPeople) < 1:
+    if numPeople is not None:
+        if int(numPeople) > 20 or int(numPeople) < 1:
+            return build_validation_result(
+                False,
+                'NumPeople',
+                'You can host only between 1 to 20 people. Can you provide the valid value in this range?'
+            )
 
     if phoneNum is not None and (len(phoneNum) != 10 or not phoneNum.isdigit()):
         return build_validation_result(
             False,
             'PhoneNum',
-            'Please enter a valid 10 digit phone number in the format NNNNNNNNNN.'
+            'Please enter a valid 10 digit phone number in the format 1234567890.'
         )
 
     return {'isValid': True}
@@ -270,38 +267,6 @@ def dining_suggestions(intent_request):
             return delegate(session_attributes, intent_request['currentIntent']['slots'])
 
         if confirmation_status == 'None':
-            '''
-            # If we are currently auto-populating but have not gotten confirmation, keep requesting for confirmation.
-            if (not pickup_city and not pickup_date and not return_date and not driver_age and not car_type):
-
-                if last_confirmed_reservation and try_ex(lambda: last_confirmed_reservation['ReservationType']) == 'Hotel':
-                    # If the user's previous reservation was a hotel - prompt for a rental with
-                    # auto-populated values to match this reservation.
-                    session_attributes['confirmationContext'] = 'AutoPopulate'
-                    return confirm_intent(
-                        session_attributes,
-                        intent_request['currentIntent']['name'],
-                        {
-                            'PickUpCity': last_confirmed_reservation['Location'],
-                            'PickUpDate': last_confirmed_reservation['CheckInDate'],
-                            'ReturnDate': add_days(
-                                last_confirmed_reservation['CheckInDate'], last_confirmed_reservation['Nights']
-                            ),
-                            'CarType': None,
-                            'DriverAge': None
-                        },
-                        {
-                            'contentType': 'PlainText',
-                            'content': 'Is this car rental for your {} night stay in {} on {}?'.format(
-                                last_confirmed_reservation['Nights'],
-                                last_confirmed_reservation['Location'],
-                                last_confirmed_reservation['CheckInDate']
-                            )
-                        }
-                    )
-
-            # Otherwise, let native DM rules determine how to elicit for slots and/or drive confirmation.
-            '''
             return delegate(session_attributes, intent_request['currentIntent']['slots'])
 
 
@@ -412,6 +377,7 @@ def lambda_handler(event, context):
     # By default, treat the user request as coming from the America/New_York time zone.
     os.environ['TZ'] = 'America/New_York'
     time.tzset()
+    logger.debug('event: {}'.format(event))
     logger.debug('event.bot.name={}'.format(event['bot']['name']))
 
     return dispatch(event)
